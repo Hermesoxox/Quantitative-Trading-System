@@ -168,10 +168,32 @@ examples/run_backtest.py  端到端演示
 
 ```bash
 pip install -r requirements.txt
-python -m examples.run_backtest          # 合成数据跑通全流程
 
-# 接入真实数据：在 examples/run_backtest.py 设 USE_REAL_DATA=True，
-# 并在 src/data/loader.py 配置 AkShare 股票池与字段映射。
+# 1) 合成数据跑通全流程 + 生成绩效图(reports/*.png)
+python -m examples.run_backtest
+
+# 2) 真实数据(东方财富直连)端到端回测 + 可视化
+python -m examples.run_real_backtest                  # 默认沪深300, 2016-2025
+python -m examples.run_real_backtest --n 80           # 限制股票数加速
+python -m examples.run_real_backtest --codes 600519,000858,601318
 ```
+
+### 真实数据接入说明
+
+- 行情(前复权)由 `src/data/eastmoney.py` 直连东方财富公开接口抓取，**仅依赖
+  `requests`**，带主机轮询 + 指数退避重试 + parquet 缓存。字段/复权口径已对真实
+  返回校验，无需 akshare（其 `jsonpath` 依赖在部分环境编译失败）。
+- 资金流/财务数据缺失时，相关因子自动跳过（不影响价格/动量/波动/反转类），
+  生产环境可接东财资金流接口或 Tushare 补齐。
+- **网络受限环境提示**：若运行环境的网络策略限制了数据 API 主机（返回
+  502/503/空），抓取会失败并给出明确提示。此时请在**本机**或**放宽网络策略**的
+  环境运行——代码与真实接口完全一致，无需改动。
+
+### 绩效可视化（`analysis/plots.py`）
+
+两个回测脚本结束后均会在 `reports/` 生成：
+`equity_drawdown.png`（净值+回撤）、`monthly_heatmap.png`（月度收益热力图）、
+`rolling_sharpe.png`（126日滚动夏普）、`factor_icir.png`（因子 ICIR 排序）。
+真实数据脚本还会叠加沪深300基准。
 
 **免责声明**：本项目仅用于量化研究与教育，不构成任何投资建议。市场有风险，实盘需自负盈亏，并先经充分的纸面与小资金验证。

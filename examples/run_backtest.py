@@ -155,7 +155,18 @@ def main():
     if len(oos_eq) > 10:
         print("样本外绩效:", performance_summary(oos_eq))
 
-    print("\n演示完成。真实数据下请替换 loader 并重跑。")
+    # 9) 绩效可视化(与真实数据脚本共用同一套绘图代码)
+    try:
+        from analysis.plots import generate_report
+        outdir = os.path.join(os.path.dirname(__file__), "..", "reports")
+        paths = generate_report(equity, ic_table, outdir)
+        print("\n图表已生成:")
+        for p in paths:
+            print("  ", os.path.abspath(p))
+    except Exception as e:
+        print(f"[绘图跳过] {e}")
+
+    print("\n演示完成。真实数据请运行 examples/run_real_backtest.py。")
 
 
 if __name__ == "__main__":
