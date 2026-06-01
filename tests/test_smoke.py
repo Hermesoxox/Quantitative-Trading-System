@@ -91,6 +91,46 @@ def test_trend_filter_shape():
     assert tf.dtypes.iloc[0] == bool
 
 
+def test_regime_exposure_bounded():
+    """市场状态总仓位时间表应落在 [0,1]，且熊市能降到接近 0。"""
+    from src.regime import combined_exposure
+    ds = make_synthetic_dataset(n_stocks=15, start="2018-01-01",
+                                end="2021-12-31")
+    close = _wide(ds["price"], "close")
+    expo = combined_exposure(close, target_vol=0.12)
+    assert expo.between(0, 1).all()
+    assert expo.shape[0] == close.shape[0]
+
+
+def test_overfit_diagnostics():
+    """PSR/PBO 在随机数据上应给出合理范围的值。"""
+    import numpy as np
+    from analysis.overfit import probabilistic_sharpe_ratio, pbo_cscv
+    rng = np.random.default_rng(0)
+    rets = pd.Series(rng.normal(0.0005, 0.01, 500))
+    psr = probabilistic_sharpe_ratio(rets, sr_benchmark=0.0)
+    assert 0.0 <= psr <= 1.0
+    # 10 条纯噪声策略 -> PBO 应可计算且在 [0,1]
+    mat = pd.DataFrame(rng.normal(0, 0.01, (300, 10)))
+    res = pbo_cscv(mat, n_splits=8)
+    assert 0.0 <= res["PBO"] <= 1.0
+
+
+def test_concentrated_holdings_cap():
+    """≤5 只集中持仓：构建的目标权重数量不超过上限，且和≈1。"""
+    from config import PORTFOLIO
+    from src.portfolio import build_target_weights
+    codes = [f"60000{i}" for i in range(20)]
+    score = pd.Series(range(20), index=codes, dtype=float)
+    trend = pd.Series(True, index=codes)
+    vol = pd.Series(0.2, index=codes)
+    industry = pd.Series(["A"] * 20, index=codes)
+    w = build_target_weights(score, trend, vol, industry)
+    assert len(w) <= PORTFOLIO.n_holdings_max
+    assert abs(w.sum() - 1.0) < 1e-6
+    assert (w <= PORTFOLIO.max_weight_per_stock + 1e-9).all()
+
+
 # --- 极简 approx，避免强依赖 pytest ---
 class _Approx:
     def __init__(self, v, tol=1e-6):

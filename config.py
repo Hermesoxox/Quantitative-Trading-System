@@ -50,12 +50,14 @@ class UniverseFilter:
 # ----------------------------------------------------------------------------
 @dataclass(frozen=True)
 class PortfolioParams:
-    n_holdings_min: int = 8
-    n_holdings_max: int = 15
-    top_n_buy: int = 15                        # 综合得分前 N 进入候选
+    # ★ 集中持仓模式（≤5 只）。集中度高 -> 单票风险大，必须靠 regime/波动率目标
+    #   叠加层 + 更严个股止损来守回撤；详见 docs/ADVANCED_STRATEGY.md。
+    n_holdings_min: int = 3
+    n_holdings_max: int = 5                     # 最多持有 5 只
+    top_n_buy: int = 5                          # 综合得分前 N 进入候选
     exit_rank_pct: float = 0.20                # 跌出前 20% 卖出
-    max_weight_per_stock: float = 0.10         # 单票上限 10%
-    max_weight_per_industry: float = 0.30      # 行业暴露上限 30%
+    max_weight_per_stock: float = 0.30         # 单票上限 30%（5 只各≈20%，留缓冲）
+    max_weight_per_industry: float = 0.60      # 行业暴露上限 60%（最多≈3 只同业）
     weighting: str = "risk_parity"             # "equal" 或 "risk_parity"
     trend_ma_long: int = 200                   # 趋势过滤：价格 > 200 日均线
     exit_ma: int = 60                          # 跌破 60 日均线卖出
@@ -65,6 +67,24 @@ class PortfolioParams:
                                                # 比例低于此值则不调，过滤微小漂移
     hold_buffer_rank: float = 0.40             # 持仓滞后：得分仍在前 40% 就不因
                                                # 排名卖出（比建仓门槛宽，减少来回）
+
+
+# ----------------------------------------------------------------------------
+# 3b. 高级叠加层：市场状态识别 + 波动率目标（SOTA 风格，集中持仓的回撤防线）
+# ----------------------------------------------------------------------------
+@dataclass(frozen=True)
+class OverlayParams:
+    use_regime: bool = True                    # 启用市场状态(趋势)过滤
+    regime_ma: int = 200                       # 基准 MA200 判牛熊
+    use_vol_target: bool = True                # 启用波动率目标
+    target_vol: float = 0.12                   # 目标年化波动 12%
+    vol_window: int = 20
+    exposure_smooth: int = 5                   # 总仓位平滑，防频繁满/空切换
+    # ML 因子合成
+    use_ml_combiner: bool = True               # 用梯度提升合成(否则线性加权)
+    ml_horizon: int = 5                        # 预测未来收益窗口
+    ml_retrain_freq: int = 60                  # 每 60 交易日重训
+    ml_embargo_days: int = 10                  # 净化禁运缓冲
 
 
 # ----------------------------------------------------------------------------
@@ -155,3 +175,4 @@ UNIVERSE = UniverseFilter()
 PORTFOLIO = PortfolioParams()
 RISK = RiskParams()
 PERIOD = BacktestPeriod()
+OVERLAY = OverlayParams()

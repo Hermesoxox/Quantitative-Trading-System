@@ -44,6 +44,7 @@ class Backtester:
         rebalance_dates: list[pd.Timestamp],
         init_capital: float = 1.0e7,
         build_weights_fn=None,             # 注入组合构建函数，便于解耦/测试
+        exposure_schedule: pd.Series | None = None,  # date->[0,1] 总仓位上限
     ):
         self.px = prices
         self.score = score
@@ -54,6 +55,8 @@ class Backtester:
         self.rebal = set(pd.to_datetime(rebalance_dates))
         self.init_capital = init_capital
         self.dates = list(prices["close"].index)
+        # 市场状态/波动率目标叠加的总仓位时间表(regime + vol targeting)
+        self.exposure_schedule = exposure_schedule
 
         if build_weights_fn is None:
             from src.portfolio import build_target_weights
@@ -231,8 +234,13 @@ class Backtester:
         if target_w.empty:
             return []
 
+        # 叠加市场状态/波动率目标的总仓位上限(≤5只集中持仓的核心回撤防线)
+        regime_expo = 1.0
+        if self.exposure_schedule is not None and date in self.exposure_schedule.index:
+            regime_expo = float(self.exposure_schedule.loc[date])
+
         equity = self._portfolio_value(date)
-        investable = equity * target_exposure
+        investable = equity * target_exposure * regime_expo
         orders = []
 
         # 卖出（带滞后/缓冲）：仅当持仓不在新目标、且得分已跌出更宽的
@@ -293,6 +301,14 @@ class Backtester:
 
             # 个股风控卖出始终生效
             self.pending.extend(self._generate_risk_sells(date))
+
+            # 市场状态熊市信号(总仓位≈0)：即日(非调仓日也)清仓避险，
+            # 不必等到下个调仓日——这是集中持仓控制最大回撤的关键时效。
+            if self.exposure_schedule is not None and date in self.exposure_schedule.index:
+                if float(self.exposure_schedule.loc[date]) < 0.10 and self.positions:
+                    for code in list(self.positions.keys()):
+                        self.pending.append(Order(code, "sell", None, "regime_off"))
+                    continue
 
             if action["action"] == "halve":
                 # 减仓至半仓：对每个持仓卖出一半市值

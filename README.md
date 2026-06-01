@@ -23,9 +23,16 @@ src/
   backtest/metrics.py     年化/夏普/回撤/胜率/盈亏比/月胜率/换手率/分年度
   risk/management.py      个股止损/移动止盈 + 组合减仓/熔断 + 流动性
   optimization/rolling.py 滚动IC加权（3年训练/1年验证），防过拟合核心
+  ml/cv.py                净化(purge)+禁运(embargo)时间序列CV，防标签泄露
+  ml/combiner.py          LightGBM梯度提升因子合成（滚动净化训练，缺库回退线性）
+  regime/detector.py      市场状态识别 + 波动率目标 -> 动态总仓位
 analysis/factor_ic.py     IC/RankIC/ICIR + 分组回测
 analysis/robustness.py    参数±20%扰动稳健性检验
-examples/run_backtest.py  端到端演示
+analysis/overfit.py       紧缩夏普DSR + 过拟合概率PBO(CSCV)
+analysis/plots.py         绩效可视化（净值/回撤/月度热力/滚动夏普/ICIR）
+examples/run_backtest.py  端到端演示（基础版，8-15只）
+examples/run_real_backtest.py  真实数据(东财)回测
+examples/run_advanced.py  进阶版（≤5只集中持仓 + GBDT + regime + 诊断）
 ```
 
 设计的第一性原理：**把 alpha（选股）与 beta（择时、风格）解耦**。因子负责选出好股票，行业/市值中性化剥离风格暴露，趋势过滤负责回避系统性下跌，风控负责控制尾部损失。每一层都可独立验证、独立归因。
@@ -183,7 +190,19 @@ python -m examples.run_backtest
 python -m examples.run_real_backtest                  # 默认沪深300, 2016-2025
 python -m examples.run_real_backtest --n 80           # 限制股票数加速
 python -m examples.run_real_backtest --codes 600519,000858,601318
+
+# 3) 进阶版：集中持仓(≤5只) + GBDT合成 + 市场状态/波动率目标 + 过拟合诊断
+python -m examples.run_advanced
 ```
+
+### 进阶策略（对标 SOTA + 集中持仓≤5只）
+
+详见 **[docs/ADVANCED_STRATEGY.md](docs/ADVANCED_STRATEGY.md)**。相比基础版的升级：
+- **非线性因子合成**：LightGBM 梯度提升 + 净化/禁运滚动训练防泄露（`src/ml/`），缺库自动回退岭回归。
+- **市场状态识别 + 波动率目标**叠加层（`src/regime/`）：动态调总仓位，熊市清仓避险——集中持仓的回撤生命线。
+- **集中组合**：最多 5 只、单票上限 30%（`config.PortfolioParams`）。
+- **过拟合诊断**：紧缩夏普 DSR + 过拟合概率 PBO（`analysis/overfit.py`），量化"曲线是否靠运气"。
+- 合成数据上：年化换手 **55→14**、最大回撤 **−52%→−30%**、PBO=0（详见文档）。
 
 ### 真实数据接入说明
 
