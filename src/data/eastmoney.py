@@ -55,16 +55,24 @@ def fetch_kline(
     start: str,
     end: str,
     adjust: str = "qfq",
-    tries: int = 5,
-    pause: float = 0.5,
+    tries: int = 4,
+    pause: float = 0.6,
 ) -> Optional[pd.DataFrame]:
     """
     抓取单只股票日线(默认前复权)。返回标准化 DataFrame 或 None。
 
-    带主机轮询 + 指数退避重试，应对限流/瞬时故障。
+    多源容错：先试东方财富(主机轮询+指数退避)，失败再回退腾讯接口。
+    实测东财对云端/海外 IP 会大面积 502 限流，腾讯接口更稳，故双源互备。
     """
     if requests is None:
         raise RuntimeError("requests 未安装")
+    df = _fetch_eastmoney(code, start, end, adjust, tries, pause)
+    if df is not None and not df.empty:
+        return df
+    return _fetch_tencent(code, start, end, adjust)
+
+
+def _fetch_eastmoney(code, start, end, adjust, tries, pause):
     fqt = {"qfq": 1, "hfq": 2, "none": 0}.get(adjust, 1)
     params = {
         "secid": _secid(code),
@@ -73,23 +81,73 @@ def fetch_kline(
         "klt": "101", "fqt": str(fqt),
         "beg": start.replace("-", ""), "end": end.replace("-", ""),
     }
-    last_err = None
     for attempt in range(tries):
         host = _HOSTS[attempt % len(_HOSTS)]
         url = _KLINE_URL.replace("push2.eastmoney.com", host)
         try:
             r = requests.get(url, params=params, headers=_HEADERS, timeout=15)
             if r.status_code == 200 and r.text.lstrip().startswith("{"):
-                j = r.json()
-                data = j.get("data")
+                data = r.json().get("data")
                 if data and data.get("klines"):
                     return _parse_klines(code, data["klines"])
-            last_err = f"status={r.status_code}"
-        except Exception as e:  # 网络瞬断/超时
-            last_err = f"{type(e).__name__}: {e}"
-        time.sleep(pause * (2 ** attempt))  # 指数退避: 0.5,1,2,4,8s
-    print(f"[fetch_kline] {code} 失败: {last_err}")
+        except Exception:
+            pass
+        time.sleep(pause * (2 ** attempt))
     return None
+
+
+def _tencent_symbol(code: str) -> str:
+    """腾讯接口前缀：6/9/5 开头沪市 sh，其余深市 sz。"""
+    return ("sh" if code.startswith(("6", "9", "5")) else "sz") + code
+
+
+def _fetch_tencent(code, start, end, adjust, tries=3, pause=0.6):
+    """
+    腾讯财经日线(前复权)。接口:
+      https://web.ifzq.gtimg.cn/appstock/app/fqkline/get
+      param = <symbol>,day,<start>,<end>,<count>,<qfq|hfq|''>
+    返回 data[symbol]["qfqday"|"day"] = [[date,open,close,high,low,volume,...], ...]
+    """
+    sym = _tencent_symbol(code)
+    fq = {"qfq": "qfq", "hfq": "hfq", "none": ""}.get(adjust, "qfq")
+    key = {"qfq": "qfqday", "hfq": "hfqday", "none": "day"}.get(adjust, "qfqday")
+    param = f"{sym},day,{start},{end},2600,{fq}"
+    url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+    for attempt in range(tries):
+        try:
+            r = requests.get(url, params={"param": param},
+                             headers=_HEADERS, timeout=15)
+            if r.status_code == 200 and r.text.lstrip().startswith("{"):
+                d = r.json().get("data", {}).get(sym, {})
+                rows = d.get(key) or d.get("day")
+                if rows:
+                    return _parse_tencent(code, rows)
+        except Exception:
+            pass
+        time.sleep(pause * (2 ** attempt))
+    print(f"[fetch_kline] {code} 东财+腾讯均失败")
+    return None
+
+
+def _parse_tencent(code: str, rows: list) -> pd.DataFrame:
+    """腾讯 [date,open,close,high,low,volume(手),...] -> 标准化长表。"""
+    recs = []
+    for r in rows:
+        try:
+            recs.append((r[0], float(r[1]), float(r[2]), float(r[3]),
+                         float(r[4]), float(r[5])))
+        except (ValueError, IndexError):
+            continue
+    df = pd.DataFrame(recs, columns=["date", "open", "close", "high",
+                                     "low", "volume"])
+    df["date"] = pd.to_datetime(df["date"])
+    df["code"] = code
+    # 腾讯不直接给成交额，用 量(手)×收盘×100股 近似，供流动性/规模因子使用
+    df["amount"] = df["volume"] * df["close"] * 100
+    df["pct_chg"] = df["close"].pct_change() * 100
+    df["pre_close"] = df["close"].shift(1)
+    return df[["date", "code", "open", "high", "low", "close",
+               "volume", "amount", "pct_chg", "pre_close"]]
 
 
 def _parse_klines(code: str, klines: list[str]) -> pd.DataFrame:
@@ -112,31 +170,65 @@ def fetch_universe_prices(
     end: str,
     adjust: str = "qfq",
     cache_path: str | None = None,
-    polite_pause: float = 0.3,
+    polite_pause: float = 0.5,
 ) -> pd.DataFrame:
     """
     批量抓取一篮子股票，拼成 MultiIndex(date, code) 长表并可缓存。
     与 src/data/loader.load_daily_price 的输出结构完全一致，可直接替换。
+    缓存读写对 parquet 引擎缺失做容错(回退 pickle)，不因缓存问题中断回测。
     """
-    if cache_path and os.path.exists(cache_path):
-        return pd.read_parquet(cache_path)
+    if cache_path:
+        cached = _read_cache(cache_path)
+        if cached is not None:
+            return cached
 
-    frames = []
+    frames, ok, fail = [], 0, 0
     from tqdm import tqdm
     for code in tqdm(codes, desc="fetch klines"):
         df = fetch_kline(code, start, end, adjust)
         if df is not None and not df.empty:
-            frames.append(df)
+            frames.append(df); ok += 1
+        else:
+            fail += 1
         time.sleep(polite_pause)  # 控速，避免触发限流
+    print(f"[fetch_universe_prices] 成功 {ok} / 失败 {fail}")
     if not frames:
         raise RuntimeError(
-            "未获取到任何行情。多半是运行环境网络策略限制了数据API主机，"
+            "未获取到任何行情。东财与腾讯接口均不可达，"
             "请在本机或放宽网络策略的环境重试。")
     panel = pd.concat(frames).set_index(["date", "code"]).sort_index()
     if cache_path:
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        panel.to_parquet(cache_path)
+        _write_cache(panel, cache_path)
     return panel
+
+
+def _read_cache(path: str) -> Optional[pd.DataFrame]:
+    """优先读 parquet，缺引擎或失败时回退同名 .pkl。"""
+    try:
+        if os.path.exists(path):
+            return pd.read_parquet(path)
+    except Exception:
+        pass
+    pkl = path + ".pkl"
+    if os.path.exists(pkl):
+        try:
+            return pd.read_pickle(pkl)
+        except Exception:
+            pass
+    return None
+
+
+def _write_cache(panel: pd.DataFrame, path: str) -> None:
+    """写缓存：parquet 不可用则回退 pickle，绝不因此中断主流程。"""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        panel.to_parquet(path)
+    except Exception as e:
+        try:
+            panel.to_pickle(path + ".pkl")
+            print(f"[cache] parquet 不可用({type(e).__name__})，已回退 pickle。")
+        except Exception:
+            print("[cache] 缓存写入失败，跳过(不影响本次回测)。")
 
 
 def fetch_csi300_codes(tries: int = 5) -> list[str]:

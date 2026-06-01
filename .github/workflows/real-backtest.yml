@@ -49,10 +49,11 @@ jobs:
           START: ${{ github.event.inputs.start || '2016-01-01' }}
           END: ${{ github.event.inputs.end || '2025-12-31' }}
         run: |
+          set -o pipefail
           mkdir -p reports
-          python -m examples.run_real_backtest \
+          python -u -m examples.run_real_backtest \
             --n "$N_STOCKS" --start "$START" --end "$END" \
-            | tee reports/backtest_log.txt
+            2>&1 | tee reports/backtest_log.txt
 
       - name: Upload performance report (plots + log)
         if: always()
@@ -85,10 +86,11 @@ jobs:
           START: ${{ github.event.inputs.start || '2016-01-01' }}
           END: ${{ github.event.inputs.end || '2025-12-31' }}
         run: |
+          set -o pipefail
           mkdir -p reports_advanced
-          python -m examples.run_advanced --real \
+          python -u -m examples.run_advanced --real \
             --n "$N_STOCKS" --start "$START" --end "$END" \
-            | tee reports_advanced/advanced_log.txt
+            2>&1 | tee reports_advanced/advanced_log.txt
       - name: Upload advanced report
         if: always()
         uses: actions/upload-artifact@v4
