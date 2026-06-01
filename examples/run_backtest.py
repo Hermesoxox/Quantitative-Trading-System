@@ -23,7 +23,7 @@ from config import DEFAULT_FACTOR_WEIGHTS, PERIOD
 from src.data.loader import make_synthetic_dataset, load_daily_price, \
     load_money_flow, load_industry_map
 from src.factors import compute_all_factors, neutralize_factor
-from src.signals import composite_score, trend_filter
+from src.signals import composite_score, trend_filter, smooth_score
 from src.backtest import Backtester, performance_summary, annual_breakdown
 from src.optimization.rolling import rolling_factor_weights
 from src.optimization.rolling import weights_for_date
@@ -118,6 +118,9 @@ def main():
         if row_factors:
             s = composite_score(row_factors, w)
             score.loc[date] = s.loc[date]
+
+    # 5b) 得分时间平滑（降低换手率，见 smooth_score 说明）
+    score = smooth_score(score)
 
     # 6) 趋势过滤 + 辅助宽表
     trend = trend_filter(close, ma_window=200)

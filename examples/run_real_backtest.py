@@ -38,7 +38,7 @@ from config import DEFAULT_FACTOR_WEIGHTS, PERIOD
 from src.data.eastmoney import (fetch_universe_prices, fetch_csi300_codes,
                                 fetch_kline)
 from src.factors import compute_all_factors, neutralize_factor
-from src.signals import composite_score, trend_filter
+from src.signals import composite_score, trend_filter, smooth_score
 from src.backtest import Backtester, performance_summary, annual_breakdown
 from src.optimization.rolling import rolling_factor_weights, weights_for_date
 from analysis.factor_ic import evaluate_factor_library
@@ -110,6 +110,9 @@ def main():
         row = {n: f.loc[[date]] for n, f in neut.items() if date in f.index}
         if row:
             score.loc[date] = composite_score(row, w).loc[date]
+
+    # 6b) 得分平滑降换手
+    score = smooth_score(score)
 
     # 7) 辅助宽表 + 回测
     trend = trend_filter(close, ma_window=200)

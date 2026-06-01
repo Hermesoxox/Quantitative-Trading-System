@@ -59,6 +59,12 @@ class PortfolioParams:
     weighting: str = "risk_parity"             # "equal" 或 "risk_parity"
     trend_ma_long: int = 200                   # 趋势过滤：价格 > 200 日均线
     exit_ma: int = 60                          # 跌破 60 日均线卖出
+    # --- 换手率控制（降低交易成本与净值抖动） ---
+    score_smooth_span: int = 5                 # 综合得分 EMA 平滑跨度（0=不平滑）
+    rebalance_band: float = 0.03               # 无交易缓冲带：|目标-当前| 占净值
+                                               # 比例低于此值则不调，过滤微小漂移
+    hold_buffer_rank: float = 0.40             # 持仓滞后：得分仍在前 40% 就不因
+                                               # 排名卖出（比建仓门槛宽，减少来回）
 
 
 # ----------------------------------------------------------------------------
@@ -87,7 +93,8 @@ class BacktestPeriod:
     in_sample_end: str = "2021-12-31"
     out_sample_start: str = "2022-01-01"
     out_sample_end: str = "2025-12-31"
-    rebalance_freq: int = 5                    # 每 5 个交易日调仓一次
+    rebalance_freq: int = 10                   # 每 10 个交易日调仓一次（持仓周期
+                                               # 居 5-20 日中段，兼顾换手与时效）
     # 滚动优化：3 年训练 + 1 年验证，每 12 个月滚动一次
     roll_train_months: int = 36
     roll_valid_months: int = 12

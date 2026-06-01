@@ -57,6 +57,21 @@ def composite_score(
     return score.where(weight_sum > 0).div(weight_sum.replace(0, pd.NA))
 
 
+def smooth_score(score: pd.DataFrame, span: int | None = None) -> pd.DataFrame:
+    """
+    对综合得分做时间维 EMA 平滑，降低信号抖动与换手率。
+
+    公式:  Smoothed_{i,t} = EMA(Score_{i,·}, span)_t
+    直觉:  原始横截面得分逐日跳动，会触发频繁的进出与权重微调，吃掉成本。
+           EMA 让得分更"黏"，只有持续性的相对强弱变化才改变持仓，
+           契合 5-20 日持仓周期，且不引入未来信息（仅用历史）。span=0 关闭。
+    """
+    s = PORTFOLIO.score_smooth_span if span is None else span
+    if not s or s <= 1:
+        return score
+    return score.ewm(span=s, min_periods=1).mean()
+
+
 def trend_filter(close: pd.DataFrame, ma_window: int | None = None) -> pd.DataFrame:
     """
     趋势过滤：价格在长期均线之上才允许买入，返回布尔宽表。

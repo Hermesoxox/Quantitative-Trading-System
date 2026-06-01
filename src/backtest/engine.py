@@ -235,14 +235,18 @@ class Backtester:
         investable = equity * target_exposure
         orders = []
 
-        # 卖出：跌出综合得分前 exit_rank_pct 的持仓（且不在新目标里）
+        # 卖出（带滞后/缓冲）：仅当持仓不在新目标、且得分已跌出更宽的
+        # hold_buffer_rank（如前40%）时才因排名卖出。比建仓门槛(前20%)更宽，
+        # 形成迟滞区间，避免临界股票反复进出造成的来回交易。
         ranked = score_row.dropna().rank(ascending=False, pct=True)
         for code in list(self.positions.keys()):
             r = ranked.get(code, 1.0)
-            if code not in target_w.index and r > PORTFOLIO.exit_rank_pct:
+            if code not in target_w.index and r > PORTFOLIO.hold_buffer_rank:
                 orders.append(Order(code, "sell", None, "rank_exit"))
 
-        # 调整到目标权重
+        # 调整到目标权重，施加"无交易缓冲带"：仅当目标与当前的偏离
+        # 超过 rebalance_band（占净值比例）才下单，过滤波动率漂移引起的微调。
+        band = equity * PORTFOLIO.rebalance_band
         for code, w in target_w.items():
             tgt_val = investable * w
             cur_val = 0.0
@@ -250,9 +254,9 @@ class Backtester:
                 px = self._price("close", date, code)
                 cur_val = self.positions[code].shares * (px or 0)
             diff = tgt_val - cur_val
-            if diff > equity * 0.005:        # 加仓阈值，过滤碎单
+            if diff > band:
                 orders.append(Order(code, "buy", diff, "rebalance"))
-            elif diff < -equity * 0.005:
+            elif diff < -band:
                 orders.append(Order(code, "sell", -diff, "rebalance_trim"))
         return orders
 
