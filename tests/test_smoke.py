@@ -116,6 +116,19 @@ def test_overfit_diagnostics():
     assert 0.0 <= res["PBO"] <= 1.0
 
 
+def test_adaptive_exposure_bounded():
+    """自适应总仓位序列应落在 [0,1]，且自适应目标波动在合理区间。"""
+    from src.regime import adaptive_combined_exposure, adaptive_target_vol
+    from src.regime.detector import build_market_proxy
+    ds = make_synthetic_dataset(n_stocks=15, start="2017-01-01",
+                                end="2021-12-31")
+    close = _wide(ds["price"], "close")
+    expo = adaptive_combined_exposure(close)
+    assert expo.between(0, 1).all()
+    tv = adaptive_target_vol(build_market_proxy(close))
+    assert tv.between(0.06, 0.20).all()
+
+
 def test_drawdown_guard_states():
     """回撤守卫：软档减半、硬档清仓、冷却后重置峰值。"""
     from src.risk import DrawdownGuard

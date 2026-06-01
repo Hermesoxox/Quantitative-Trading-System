@@ -26,10 +26,14 @@ jobs:
         run: python tests/test_smoke.py
       - name: Synthetic end-to-end backtest
         run: python -m examples.run_backtest
+      - name: Walk-forward adaptive backtest (synthetic)
+        run: python -m examples.run_walkforward
       - name: Upload synthetic plots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: synthetic-report
-          path: reports/*.png
+          path: |
+            reports/*.png
+            reports_walkforward/*.png
           if-no-files-found: warn

@@ -26,13 +26,15 @@ src/
   ml/cv.py                净化(purge)+禁运(embargo)时间序列CV，防标签泄露
   ml/combiner.py          LightGBM梯度提升因子合成（滚动净化训练，缺库回退线性）
   regime/detector.py      市场状态识别 + 波动率目标 -> 动态总仓位
+  regime/adaptive.py      自适应目标波动 + 波动缩放回撤带宽（规则式，无拟合）
 analysis/factor_ic.py     IC/RankIC/ICIR + 分组回测
 analysis/robustness.py    参数±20%扰动稳健性检验
 analysis/overfit.py       紧缩夏普DSR + 过拟合概率PBO(CSCV)
 analysis/plots.py         绩效可视化（净值/回撤/月度热力/滚动夏普/ICIR）
 examples/run_backtest.py  端到端演示（基础版，8-15只）
 examples/run_real_backtest.py  真实数据(东财)回测
-examples/run_advanced.py  进阶版（≤5只集中持仓 + GBDT + regime + 诊断）
+examples/run_advanced.py  进阶版（≤5只集中持仓 + GBDT + regime + 回撤守卫 + 诊断）
+examples/run_walkforward.py 走步式自适应（风险层滚动自标定 + 纯样本外拼接）
 ```
 
 设计的第一性原理：**把 alpha（选股）与 beta（择时、风格）解耦**。因子负责选出好股票，行业/市值中性化剥离风格暴露，趋势过滤负责回避系统性下跌，风控负责控制尾部损失。每一层都可独立验证、独立归因。
@@ -194,6 +196,9 @@ python -m examples.run_real_backtest --codes 600519,000858,601318
 # 3) 进阶版：集中持仓(≤5只) + GBDT合成 + 市场状态/波动率目标 + 回撤守卫 + 过拟合诊断
 python -m examples.run_advanced                       # 合成数据
 python -m examples.run_advanced --real --n 60         # 真实数据(东财)+沪深300基准
+
+# 4) 走步式自适应回测：风险叠加层滚动自标定 + 纯样本外拼接（最诚实的回测）
+python -m examples.run_walkforward
 ```
 
 ### 进阶策略（对标 SOTA + 集中持仓≤5只）
