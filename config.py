@@ -77,7 +77,7 @@ class OverlayParams:
     use_regime: bool = True                    # 启用市场状态(趋势)过滤
     regime_ma: int = 200                       # 基准 MA200 判牛熊
     use_vol_target: bool = True                # 启用波动率目标
-    target_vol: float = 0.12                   # 目标年化波动 12%
+    target_vol: float = 0.10                   # 目标年化波动 10%（集中持仓宜更低）
     vol_window: int = 20
     exposure_smooth: int = 5                   # 总仓位平滑，防频繁满/空切换
     # ML 因子合成
@@ -102,6 +102,15 @@ class RiskParams:
     halt_days: int = 5                         # 暂停交易的交易日数
     # 流动性
     max_pct_of_volume: float = 0.05            # 单票成交不超过当日成交量 5%
+    # ★ 回撤守卫(集中持仓把最大回撤压到 20% 以内的硬约束)
+    #   从净值峰值起算的回撤分档限仓：软档减半仓、硬档清仓持币，
+    #   冷却 N 日后重置峰值并由 regime 决定是否重新入场。
+    dd_guard_soft: float = 0.10                # 回撤 >10% -> 总仓位降至 50%
+    dd_guard_hard: float = 0.15                # 回撤 >15% -> 清仓持币
+    dd_guard_cooldown: int = 10                # 清仓后冷却交易日数，再重置峰值
+    # 注：回撤守卫只能在"有真实趋势(熊市持续下跌)"时有效护盘；在无趋势的随机
+    # 波动上过度收紧只会反复止损-再入场(whipsaw)，反而加深回撤。切勿在噪声/
+    # 合成数据上调这三个参数——那是典型的过拟合陷阱。应在真实数据上检验。
 
 
 # ----------------------------------------------------------------------------

@@ -8,11 +8,14 @@
   4. 过拟合诊断：紧缩夏普 DSR + 过拟合概率 PBO，给出可信度判定。
   5. 全套绩效可视化(reports/)。
 
-运行: python -m examples.run_advanced
+运行:
+    python -m examples.run_advanced                 # 合成数据
+    python -m examples.run_advanced --real --n 60    # 真实数据(东财)+沪深300基准
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import warnings
@@ -53,11 +56,7 @@ def candidate_strategy_returns(neut_factors, close, top_k=5):
     return pd.DataFrame(out).dropna(how="all")
 
 
-def main():
-    print("=" * 72)
-    print("进阶多因子集中持仓策略(≤5只) — ML合成 + 状态识别 + 波动率目标")
-    print("=" * 72)
-
+def load_synthetic():
     ds = make_synthetic_dataset(n_stocks=80, start=PERIOD.in_sample_start,
                                 end=PERIOD.out_sample_end)
     wide = {f: long_to_wide(ds["price"], f) for f in
@@ -66,8 +65,6 @@ def main():
     close = wide["close"]
     industry = ds["industry"]["industry"]
     log_cap = ds["industry"]["log_cap"]
-
-    # 财务对齐(公告日 ffill)
     fund = ds["fund"]
     def align(col):
         f = fund.reset_index().pivot_table(index="announce_date",
@@ -75,6 +72,55 @@ def main():
         return f.reindex(close.index, method="ffill").reindex(columns=close.columns)
     for c in ["roe", "gross_margin", "net_profit", "bps", "eps"]:
         wide[c] = align(c)
+    return wide, industry, log_cap, None
+
+
+def load_real(n, start, end, codes_arg):
+    """真实数据(东财直连)：行情全量；资金流/财务缺失则相关因子自动跳过。"""
+    from src.data.eastmoney import (fetch_universe_prices, fetch_csi300_codes,
+                                    fetch_kline)
+    cache_dir = os.path.join(os.path.dirname(__file__), "..", "data_cache")
+    if codes_arg:
+        codes = [c.strip() for c in codes_arg.split(",") if c.strip()]
+    else:
+        codes = fetch_csi300_codes()
+    if n > 0:
+        codes = codes[:n]
+    print(f"真实股票池: {len(codes)} 只  {start}~{end}")
+    cache = os.path.join(cache_dir, f"adv_real_{start}_{end}_{len(codes)}.parquet")
+    price = fetch_universe_prices(codes, start, end, adjust="qfq",
+                                  cache_path=cache)
+    wide = {f: long_to_wide(price, f) for f in
+            ["open", "high", "low", "close", "volume", "amount", "pre_close"]}
+    close = wide["close"]
+    # 规模用对数成交额近似，行业占位(真实落地接行业接口)
+    log_cap = np.log(wide["amount"].mean()).rename("log_cap")
+    industry = pd.Series("ALL", index=close.columns, name="industry")
+    # 沪深300基准用于 regime 层
+    bench_df = fetch_kline("000300", start, end, adjust="qfq")
+    benchmark = bench_df.set_index("date")["close"] if bench_df is not None else None
+    return wide, industry, log_cap, benchmark
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--real", action="store_true", help="用真实东财数据")
+    ap.add_argument("--n", type=int, default=0, help="股票数(0=全部/合成80)")
+    ap.add_argument("--codes", type=str, default="")
+    ap.add_argument("--start", default=PERIOD.in_sample_start)
+    ap.add_argument("--end", default=PERIOD.out_sample_end)
+    args = ap.parse_args()
+
+    print("=" * 72)
+    print("进阶多因子集中持仓策略(≤5只) — ML合成 + 状态识别 + 波动率目标 + 回撤守卫")
+    print("=" * 72)
+
+    if args.real:
+        wide, industry, log_cap, benchmark = load_real(
+            args.n, args.start, args.end, args.codes)
+    else:
+        wide, industry, log_cap, benchmark = load_synthetic()
+    close = wide["close"]
 
     # 因子 + 中性化
     raw = compute_all_factors(wide)
@@ -107,7 +153,7 @@ def main():
     exposure = None
     if OVERLAY.use_regime or OVERLAY.use_vol_target:
         exposure = combined_exposure(
-            close, benchmark=None, ma_window=OVERLAY.regime_ma,
+            close, benchmark=benchmark, ma_window=OVERLAY.regime_ma,
             target_vol=OVERLAY.target_vol, vol_window=OVERLAY.vol_window,
             smooth=OVERLAY.exposure_smooth)
         print(f"\n总仓位叠加层: 均值={exposure.mean():.2f}, "

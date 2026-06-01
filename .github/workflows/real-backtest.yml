@@ -64,3 +64,38 @@ jobs:
             reports/backtest_log.txt
           if-no-files-found: warn
           retention-days: 30
+
+  advanced-backtest:
+    # 进阶版：真实数据 + 集中持仓(≤5) + GBDT + 市场状态/波动率目标 + 回撤守卫
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run advanced real-data backtest
+        env:
+          N_STOCKS: ${{ github.event.inputs.n_stocks || '60' }}
+          START: ${{ github.event.inputs.start || '2016-01-01' }}
+          END: ${{ github.event.inputs.end || '2025-12-31' }}
+        run: |
+          mkdir -p reports_advanced
+          python -m examples.run_advanced --real \
+            --n "$N_STOCKS" --start "$START" --end "$END" \
+            | tee reports_advanced/advanced_log.txt
+      - name: Upload advanced report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: advanced-backtest-report
+          path: |
+            reports_advanced/*.png
+            reports_advanced/advanced_log.txt
+          if-no-files-found: warn
+          retention-days: 30

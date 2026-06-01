@@ -104,3 +104,52 @@ class RiskManager:
     def liquidity_cap_shares(day_volume: float) -> float:
         """当日可成交的最大股数（手数*100），不超过当日成交量的 5%。"""
         return day_volume * RISK.max_pct_of_volume
+
+
+class DrawdownGuard:
+    """
+    回撤守卫：把"从峰值起算的回撤"映射为总仓位上限，硬性约束最大回撤。
+
+    状态机
+    ------
+    * normal : 回撤 < soft，满仓上限 1.0。
+    * half   : soft ≤ 回撤 < hard，仓位上限 0.5（减半仓）。
+    * flat   : 回撤 ≥ hard，仓位上限 0（清仓持币）；进入 cooldown_days 冷却。
+               冷却结束后把"峰值"重置为当前净值并回到 normal —— 既保证最大回撤
+               被钉在 hard 附近，又能在企稳后由 regime 层决定何时重新入场，
+               避免在熊市底部反复抄底。
+
+    这是集中持仓(≤5只)把回撤压到 20% 以内最直接、最稳健的硬约束，
+    且只有 3 个参数，过拟合风险低。
+    """
+
+    def __init__(self):
+        self.peak = None
+        self.state = "normal"
+        self.cooldown_left = 0
+
+    def update(self, equity: float, bar_idx: int) -> float:
+        """传入当日净值，返回今日允许的"总仓位上限"∈{0,0.5,1.0}。"""
+        if self.peak is None:
+            self.peak = equity
+        # 冷却中：保持清仓，倒计时；结束则重置峰值
+        if self.state == "flat":
+            self.cooldown_left -= 1
+            if self.cooldown_left <= 0:
+                self.peak = equity          # 以企稳后的净值为新基准
+                self.state = "normal"
+                return 1.0
+            return 0.0
+
+        self.peak = max(self.peak, equity)
+        dd = equity / self.peak - 1.0
+
+        if dd <= -RISK.dd_guard_hard:
+            self.state = "flat"
+            self.cooldown_left = RISK.dd_guard_cooldown
+            return 0.0
+        if dd <= -RISK.dd_guard_soft:
+            self.state = "half"
+            return 0.5
+        self.state = "normal"
+        return 1.0

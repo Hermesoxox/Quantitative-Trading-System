@@ -21,7 +21,7 @@ src/
   backtest/costs.py       税费佣金滑点 + 涨跌停/T+1可交易性判定
   backtest/engine.py      事件驱动日度回测引擎（严格次日开盘撮合）
   backtest/metrics.py     年化/夏普/回撤/胜率/盈亏比/月胜率/换手率/分年度
-  risk/management.py      个股止损/移动止盈 + 组合减仓/熔断 + 流动性
+  risk/management.py      个股止损/移动止盈 + 组合减仓/熔断 + 流动性 + 回撤守卫
   optimization/rolling.py 滚动IC加权（3年训练/1年验证），防过拟合核心
   ml/cv.py                净化(purge)+禁运(embargo)时间序列CV，防标签泄露
   ml/combiner.py          LightGBM梯度提升因子合成（滚动净化训练，缺库回退线性）
@@ -191,8 +191,9 @@ python -m examples.run_real_backtest                  # 默认沪深300, 2016-20
 python -m examples.run_real_backtest --n 80           # 限制股票数加速
 python -m examples.run_real_backtest --codes 600519,000858,601318
 
-# 3) 进阶版：集中持仓(≤5只) + GBDT合成 + 市场状态/波动率目标 + 过拟合诊断
-python -m examples.run_advanced
+# 3) 进阶版：集中持仓(≤5只) + GBDT合成 + 市场状态/波动率目标 + 回撤守卫 + 过拟合诊断
+python -m examples.run_advanced                       # 合成数据
+python -m examples.run_advanced --real --n 60         # 真实数据(东财)+沪深300基准
 ```
 
 ### 进阶策略（对标 SOTA + 集中持仓≤5只）
@@ -200,9 +201,11 @@ python -m examples.run_advanced
 详见 **[docs/ADVANCED_STRATEGY.md](docs/ADVANCED_STRATEGY.md)**。相比基础版的升级：
 - **非线性因子合成**：LightGBM 梯度提升 + 净化/禁运滚动训练防泄露（`src/ml/`），缺库自动回退岭回归。
 - **市场状态识别 + 波动率目标**叠加层（`src/regime/`）：动态调总仓位，熊市清仓避险——集中持仓的回撤生命线。
+- **回撤守卫**（`risk.DrawdownGuard`）：从峰值回撤分档限仓（>10%减半、>15%清仓），把最大回撤硬性钉在阈值附近。
 - **集中组合**：最多 5 只、单票上限 30%（`config.PortfolioParams`）。
 - **过拟合诊断**：紧缩夏普 DSR + 过拟合概率 PBO（`analysis/overfit.py`），量化"曲线是否靠运气"。
-- 合成数据上：年化换手 **55→14**、最大回撤 **−52%→−30%**、PBO=0（详见文档）。
+- 合成数据上：年化换手 **55→9.8**、最大回撤 **−52%→−24%**、PBO=0。
+- ⚠️ **回撤目标须在真实数据上校准**：回撤守卫只在真实持续熊市中有效，在随机游走上过度收紧反而恶化回撤（详见文档"重要诚实结论"）。用 CI 的 `advanced-backtest` job 在真实数据上验证。
 
 ### 真实数据接入说明
 

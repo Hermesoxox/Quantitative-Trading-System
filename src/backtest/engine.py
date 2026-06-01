@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 from config import PORTFOLIO, RULES
-from src.risk import RiskManager, PositionState
+from src.risk import RiskManager, PositionState, DrawdownGuard
 from .costs import trade_cost, can_buy, can_sell
 
 
@@ -67,6 +67,8 @@ class Backtester:
         self.cash = init_capital
         self.positions: dict[str, PositionState] = {}
         self.risk = RiskManager()
+        self.dd_guard = DrawdownGuard()        # 回撤守卫：硬性约束最大回撤
+        self._dd_cap = 1.0                     # 当日回撤守卫给出的仓位上限
         self.pending: list[Order] = []
 
         # 记录
@@ -240,7 +242,7 @@ class Backtester:
             regime_expo = float(self.exposure_schedule.loc[date])
 
         equity = self._portfolio_value(date)
-        investable = equity * target_exposure * regime_expo
+        investable = equity * target_exposure * regime_expo * self._dd_cap
         orders = []
 
         # 卖出（带滞后/缓冲）：仅当持仓不在新目标、且得分已跌出更宽的
@@ -278,10 +280,11 @@ class Backtester:
             self.risk.maybe_resume(i)
             self._execute_open(date)
 
-            # 2) 收盘计算净值
+            # 2) 收盘计算净值 + 更新回撤守卫
             equity = self._portfolio_value(date)
             self.equity_curve[date] = equity
             equity_hist.append(equity)
+            self._dd_cap = self.dd_guard.update(equity, i)
 
             # 3) 组合层面风控（基于当日收益与周回撤）
             daily_ret = equity / prev_equity - 1 if prev_equity else 0
@@ -301,6 +304,12 @@ class Backtester:
 
             # 个股风控卖出始终生效
             self.pending.extend(self._generate_risk_sells(date))
+
+            # 回撤守卫硬触发(仓位上限=0)：即日清仓持币，把最大回撤钉在阈值附近。
+            if self._dd_cap <= 1e-9 and self.positions:
+                for code in list(self.positions.keys()):
+                    self.pending.append(Order(code, "sell", None, "drawdown_guard"))
+                continue
 
             # 市场状态熊市信号(总仓位≈0)：即日(非调仓日也)清仓避险，
             # 不必等到下个调仓日——这是集中持仓控制最大回撤的关键时效。

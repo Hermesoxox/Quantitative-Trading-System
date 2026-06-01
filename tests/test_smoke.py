@@ -116,6 +116,27 @@ def test_overfit_diagnostics():
     assert 0.0 <= res["PBO"] <= 1.0
 
 
+def test_drawdown_guard_states():
+    """回撤守卫：软档减半、硬档清仓、冷却后重置峰值。"""
+    from src.risk import DrawdownGuard
+    from config import RISK
+    g = DrawdownGuard()
+    assert g.update(100.0, 0) == 1.0                 # 建峰
+    # 跌到软档与硬档之间 -> 0.5
+    soft_eq = 100.0 * (1 - RISK.dd_guard_soft - 0.005)
+    assert g.update(soft_eq, 1) == 0.5
+    # 跌破硬档 -> 0 (清仓)
+    hard_eq = 100.0 * (1 - RISK.dd_guard_hard - 0.01)
+    assert g.update(hard_eq, 2) == 0.0
+    # 冷却期间维持 0
+    cap = g.update(hard_eq, 3)
+    assert cap == 0.0
+    # 冷却结束后回到 1.0 并以当前净值为新峰
+    for i in range(4, 4 + RISK.dd_guard_cooldown + 1):
+        cap = g.update(hard_eq, i)
+    assert cap == 1.0
+
+
 def test_concentrated_holdings_cap():
     """≤5 只集中持仓：构建的目标权重数量不超过上限，且和≈1。"""
     from config import PORTFOLIO
