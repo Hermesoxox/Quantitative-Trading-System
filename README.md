@@ -37,6 +37,7 @@ examples/run_backtest.py  端到端演示（基础版，8-15只）
 examples/run_real_backtest.py  真实数据(东财)回测
 examples/run_advanced.py  进阶版（≤5只集中持仓 + GBDT + regime + 回撤守卫 + 诊断）
 examples/run_walkforward.py 走步式自适应（风险层滚动自标定 + 纯样本外拼接）
+examples/live_signal.py   盘后日频实盘信号（明日买/卖清单 + 持仓风控预警，不自动下单）
 ```
 
 设计的第一性原理：**把 alpha（选股）与 beta（择时、风格）解耦**。因子负责选出好股票，行业/市值中性化剥离风格暴露，趋势过滤负责回避系统性下跌，风控负责控制尾部损失。每一层都可独立验证、独立归因。
@@ -202,6 +203,10 @@ python -m examples.run_advanced --real --n 60         # 真实数据(东财)+沪
 # 4) 走步式自适应回测：风险叠加层滚动自标定 + 纯样本外拼接（最诚实的回测）
 python -m examples.run_walkforward                    # 合成数据
 python -m examples.run_walkforward --real --n 40      # 真实数据纯样本外
+
+# 5) 盘后实盘信号：每天收盘后跑一次，输出"明日开盘买/卖清单"+持仓风控预警
+python -m examples.live_signal --capital 1000000                      # 空仓起步
+python -m examples.live_signal --positions examples/positions.example.json --capital 1000000
 ```
 
 > 📌 **真实数据纯样本外结论**（`run_walkforward --real`，2019–2025）：年化 **3.9%**、最大回撤 **−16.1%**、夏普 0.20、盈亏比 2.24。风控扎实、回撤达标，但收益 alpha 弱且衰减——详见 [docs/ADVANCED_STRATEGY.md](docs/ADVANCED_STRATEGY.md) 第五节。
