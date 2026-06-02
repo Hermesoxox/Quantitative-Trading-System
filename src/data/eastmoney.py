@@ -69,19 +69,33 @@ def fetch_kline(
     """
     if requests is None:
         raise RuntimeError("requests 未安装")
-    # 数据源优先级：Yahoo(国际可达, 云端/CI首选) -> 东财 -> 腾讯(境内更快)。
-    # 这样同一份代码在沙箱/CI(走Yahoo)与用户境内Mac(走东财/腾讯)都能拿到数据。
+    # 数据源顺序由环境变量 QTS_SOURCE 决定：
+    #   auto (默认) : yahoo -> 东财 -> 腾讯   (云端/CI/海外首选，Yahoo 全球可达)
+    #   cn          : 东财 -> 腾讯 -> yahoo   (境内 Mac 首选，东财/腾讯更快)
+    #   yahoo       : 仅 yahoo
+    # 境内用户在本机 `export QTS_SOURCE=cn` 可避免在被墙的 Yahoo 上空耗重试。
+    order = os.environ.get("QTS_SOURCE", "auto").lower()
     is_index = code in _INDEX_CODES
     from .yahoo import fetch_kline_yahoo
-    df = fetch_kline_yahoo(code, start, end, adjust, is_index=is_index)
-    if df is not None and not df.empty:
-        return df
-    if is_index:
-        return None
-    df = _fetch_eastmoney(code, start, end, adjust, tries, pause)
-    if df is not None and not df.empty:
-        return df
-    return _fetch_tencent(code, start, end, adjust)
+
+    def _yahoo():
+        return fetch_kline_yahoo(code, start, end, adjust, is_index=is_index)
+    def _em():
+        return None if is_index else _fetch_eastmoney(code, start, end, adjust, tries, pause)
+    def _tx():
+        return None if is_index else _fetch_tencent(code, start, end, adjust)
+
+    if order == "cn":
+        sources = [_em, _tx, _yahoo]
+    elif order == "yahoo":
+        sources = [_yahoo]
+    else:
+        sources = [_yahoo, _em, _tx]      # auto
+    for src in sources:
+        df = src()
+        if df is not None and not df.empty:
+            return df
+    return None
 
 
 def _fetch_eastmoney(code, start, end, adjust, tries, pause):
