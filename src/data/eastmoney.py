@@ -43,6 +43,9 @@ _HEADERS = {"User-Agent": "Mozilla/5.0",
 _KCOLS = ["date", "open", "close", "high", "low", "volume", "amount",
           "amplitude", "pct_chg", "change", "turnover"]
 
+# 指数代码（走 Yahoo 指数路径，作 regime 基准）
+_INDEX_CODES = {"000300", "000905", "000016", "399006"}
+
 
 def _secid(code: str) -> str:
     """根据代码前缀生成东财 secid。6/9开头=沪市(1)，其余=深市(0)。"""
@@ -66,6 +69,15 @@ def fetch_kline(
     """
     if requests is None:
         raise RuntimeError("requests 未安装")
+    # 数据源优先级：Yahoo(国际可达, 云端/CI首选) -> 东财 -> 腾讯(境内更快)。
+    # 这样同一份代码在沙箱/CI(走Yahoo)与用户境内Mac(走东财/腾讯)都能拿到数据。
+    is_index = code in _INDEX_CODES
+    from .yahoo import fetch_kline_yahoo
+    df = fetch_kline_yahoo(code, start, end, adjust, is_index=is_index)
+    if df is not None and not df.empty:
+        return df
+    if is_index:
+        return None
     df = _fetch_eastmoney(code, start, end, adjust, tries, pause)
     if df is not None and not df.empty:
         return df
@@ -236,9 +248,18 @@ def fetch_csi300_codes(tries: int = 5) -> list[str]:
     取沪深300成分股代码(作为容量充足、流动性好的默认股票池)。
     用东财指数成分接口；失败时回退到内置的部分蓝筹清单。
     """
-    fallback = ["600519", "601318", "600036", "000858", "600900",
-                "000333", "600276", "601166", "002594", "600030",
-                "000001", "601888", "600887", "000651", "600309"]
+    # 内置约 60 只沪深300大盘蓝筹清单（境外成分接口不可达时的稳健兜底）
+    fallback = [
+        "600519", "601318", "600036", "000858", "600900", "000333", "600276",
+        "601166", "002594", "600030", "000001", "601888", "600887", "000651",
+        "600309", "601012", "600028", "601398", "601628", "600585", "000002",
+        "600031", "603259", "601668", "600048", "000725", "002415", "300750",
+        "601288", "601988", "600000", "601857", "600104", "601601", "601211",
+        "600690", "000568", "002475", "600406", "603288", "601336", "600196",
+        "000776", "002714", "601066", "600438", "601899", "603501", "600009",
+        "000538", "002304", "600436", "601225", "000063", "600745", "603986",
+        "002241", "600547", "601088", "300059",
+    ]
     if requests is None:
         return fallback
     url = "https://push2.eastmoney.com/api/qt/clist/get"

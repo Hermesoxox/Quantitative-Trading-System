@@ -96,9 +96,17 @@ def load_real(n, start, end, codes_arg):
     # 规模用对数成交额近似，行业占位(真实落地接行业接口)
     log_cap = np.log(wide["amount"].mean()).rename("log_cap")
     industry = pd.Series("ALL", index=close.columns, name="industry")
-    # 沪深300基准用于 regime 层
+    # 沪深300基准用于 regime 层；若基准历史覆盖不足(<90%)则置空，
+    # 改用等权全样本代理(覆盖完整、更稳健)，避免基准缺口扭曲择时。
     bench_df = fetch_kline("000300", start, end, adjust="qfq")
-    benchmark = bench_df.set_index("date")["close"] if bench_df is not None else None
+    benchmark = None
+    if bench_df is not None:
+        b = bench_df.set_index("date")["close"].reindex(close.index)
+        if b.notna().mean() >= 0.90:
+            benchmark = b
+        else:
+            print(f"[基准] 沪深300覆盖率仅 {b.notna().mean():.0%}，"
+                  f"改用等权市场代理。")
     return wide, industry, log_cap, benchmark
 
 
