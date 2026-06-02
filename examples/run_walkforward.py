@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import warnings
@@ -68,24 +69,40 @@ def calmar(equity):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--real", action="store_true", help="用真实数据(Yahoo/东财)")
+    ap.add_argument("--n", type=int, default=0, help="股票数(0=全部/合成80)")
+    ap.add_argument("--codes", type=str, default="")
+    ap.add_argument("--start", default=PERIOD.in_sample_start)
+    ap.add_argument("--end", default=PERIOD.out_sample_end)
+    args = ap.parse_args()
+
     print("=" * 72)
-    print("走步式自适应回测 — 风险叠加层滚动自标定 + 纯样本外拼接")
+    print("走步式自适应回测 — 风险叠加层滚动自标定 + 纯样本外拼接"
+          + ("  [真实数据]" if args.real else "  [合成数据]"))
     print("=" * 72)
 
-    ds = make_synthetic_dataset(n_stocks=80, start=PERIOD.in_sample_start,
-                                end=PERIOD.out_sample_end)
-    wide = {f: long_to_wide(ds["price"], f) for f in
-            ["open", "high", "low", "close", "volume", "amount", "pre_close"]}
-    wide["mf_ratio"] = long_to_wide(ds["flow"], "main_net_inflow_ratio")
-    close = wide["close"]
-    industry, log_cap = ds["industry"]["industry"], ds["industry"]["log_cap"]
-    fund = ds["fund"]
-    def align(col):
-        f = fund.reset_index().pivot_table(index="announce_date",
-                                           columns="code", values=col)
-        return f.reindex(close.index, method="ffill").reindex(columns=close.columns)
-    for c in ["roe", "gross_margin", "net_profit", "bps", "eps"]:
-        wide[c] = align(c)
+    benchmark = None
+    if args.real:
+        from examples.run_advanced import load_real
+        wide, industry, log_cap, benchmark = load_real(
+            args.n, args.start, args.end, args.codes)
+        close = wide["close"]
+    else:
+        ds = make_synthetic_dataset(n_stocks=80, start=args.start, end=args.end)
+        wide = {f: long_to_wide(ds["price"], f) for f in
+                ["open", "high", "low", "close", "volume", "amount", "pre_close"]}
+        wide["mf_ratio"] = long_to_wide(ds["flow"], "main_net_inflow_ratio")
+        close = wide["close"]
+        industry, log_cap = ds["industry"]["industry"], ds["industry"]["log_cap"]
+        fund = ds["fund"]
+        def align(col):
+            f = fund.reset_index().pivot_table(index="announce_date",
+                                               columns="code", values=col)
+            return f.reindex(close.index, method="ffill").reindex(
+                columns=close.columns)
+        for c in ["roe", "gross_margin", "net_profit", "bps", "eps"]:
+            wide[c] = align(c)
 
     raw = compute_all_factors(wide)
     neut = {n: neutralize_factor(f, industry, log_cap) for n, f in raw.items()}
@@ -106,12 +123,12 @@ def main():
             score.loc[date] = composite_score(row, w).loc[date]
     score = smooth_score(score)
 
-    # 候选风险叠加层(全样本各算一次，校准时只切训练窗)
+    # 候选风险叠加层(全样本各算一次，校准时只切训练窗)；真实数据带基准
     candidates = {
-        "vol0.08": combined_exposure(close, target_vol=0.08),
-        "vol0.10": combined_exposure(close, target_vol=0.10),
-        "vol0.12": combined_exposure(close, target_vol=0.12),
-        "adaptive": adaptive_combined_exposure(close),
+        "vol0.08": combined_exposure(close, benchmark=benchmark, target_vol=0.08),
+        "vol0.10": combined_exposure(close, benchmark=benchmark, target_vol=0.10),
+        "vol0.12": combined_exposure(close, benchmark=benchmark, target_vol=0.12),
+        "adaptive": adaptive_combined_exposure(close, benchmark=benchmark),
     }
 
     # 走步式：每折在训练窗挑最优候选，应用到其后验证窗

@@ -200,8 +200,11 @@ python -m examples.run_advanced                       # 合成数据
 python -m examples.run_advanced --real --n 60         # 真实数据(东财)+沪深300基准
 
 # 4) 走步式自适应回测：风险叠加层滚动自标定 + 纯样本外拼接（最诚实的回测）
-python -m examples.run_walkforward
+python -m examples.run_walkforward                    # 合成数据
+python -m examples.run_walkforward --real --n 40      # 真实数据纯样本外
 ```
+
+> 📌 **真实数据纯样本外结论**（`run_walkforward --real`，2019–2025）：年化 **3.9%**、最大回撤 **−16.1%**、夏普 0.20、盈亏比 2.24。风控扎实、回撤达标，但收益 alpha 弱且衰减——详见 [docs/ADVANCED_STRATEGY.md](docs/ADVANCED_STRATEGY.md) 第五节。
 
 ### 进阶策略（对标 SOTA + 集中持仓≤5只）
 
