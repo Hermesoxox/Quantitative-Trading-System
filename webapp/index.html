@@ -1,0 +1,133 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="量化罗盘">
+<meta name="theme-color" content="#0e1013" media="(prefers-color-scheme:dark)">
+<meta name="theme-color" content="#f4f4f2" media="(prefers-color-scheme:light)">
+<title>量化罗盘 · A股策略看板</title>
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Crect width='180' height='180' rx='40' fill='%230e1013'/%3E%3Ctext x='90' y='120' font-size='96' text-anchor='middle'%3E%F0%9F%A7%AD%3C/text%3E%3C/svg%3E"></head><body>
+<style>
+:root {
+  --bg:#f4f4f2; --card:#ffffff; --ink:#14171c; --muted:#6a7078; --line:#e7e7e3;
+  --accent:#2f5d7c; --accent-soft:#2f5d7c22; --up:#d0342c; --down:#159a52;
+  --on:#159a52; --half:#c9871f; --off:#8a9099; --shadow:0 1px 3px #0000000f;
+}
+@media (prefers-color-scheme:dark) {
+  :root { --bg:#0e1013; --card:#171a20; --ink:#e9ebef; --muted:#949aa3;
+    --line:#242830; --accent:#79b4d8; --accent-soft:#79b4d81f; --up:#f2564a;
+    --down:#3cc07d; --on:#3cc07d; --half:#e0a63e; --off:#7d848d; --shadow:none; }
+}
+:root[data-theme="dark"] { --bg:#0e1013; --card:#171a20; --ink:#e9ebef; --muted:#949aa3;
+  --line:#242830; --accent:#79b4d8; --accent-soft:#79b4d81f; --up:#f2564a;
+  --down:#3cc07d; --on:#3cc07d; --half:#e0a63e; --off:#7d848d; --shadow:none; }
+:root[data-theme="light"] { --bg:#f4f4f2; --card:#ffffff; --ink:#14171c; --muted:#6a7078;
+  --line:#e7e7e3; --accent:#2f5d7c; --accent-soft:#2f5d7c22; --up:#d0342c;
+  --down:#159a52; --on:#159a52; --half:#c9871f; --off:#8a9099; --shadow:0 1px 3px #0000000f; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased; line-height:1.45; }
+.num { font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
+.wrap { max-width:480px; margin:0 auto; padding:0 16px 40px; }
+header { position:sticky; top:0; z-index:5; background:color-mix(in srgb,var(--bg) 88%,transparent);
+  backdrop-filter:blur(10px); border-bottom:1px solid var(--line);
+  padding:14px 16px calc(12px + env(safe-area-inset-top)); margin-bottom:14px; }
+header .wrap { padding:0; display:flex; align-items:baseline; justify-content:space-between; }
+.brand { font-weight:700; font-size:17px; letter-spacing:.2px; }
+.brand span { color:var(--accent); }
+.date { color:var(--muted); font-size:12.5px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:16px;
+  padding:16px; margin-bottom:14px; box-shadow:var(--shadow); }
+.eyebrow { font-size:11px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--muted); margin:0 0 10px; font-weight:600; }
+/* regime hero */
+.hero { display:flex; align-items:center; gap:16px; }
+.hero .dot { width:14px; height:14px; border-radius:50%; flex:none; }
+.hero.on .dot { background:var(--on); box-shadow:0 0 0 5px var(--on)22; }
+.hero.half .dot { background:var(--half); box-shadow:0 0 0 5px var(--half)22; }
+.hero.off .dot { background:var(--off); box-shadow:0 0 0 5px var(--off)22; }
+.hero .lab { font-size:20px; font-weight:700; }
+.hero .sub { color:var(--muted); font-size:12.5px; margin-top:2px; }
+.hero .expo { margin-left:auto; text-align:right; }
+.hero .expo b { font-size:30px; font-weight:750; letter-spacing:-.5px; }
+.hero .expo em { display:block; color:var(--muted); font-size:11px; font-style:normal; }
+/* holdings */
+ul.holds { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; }
+ul.holds li { display:grid; grid-template-columns:1fr 68px 40px 52px; align-items:center;
+  gap:8px; padding:9px 0; border-bottom:1px solid var(--line); }
+ul.holds li:last-child { border-bottom:0; }
+li.empty { display:block!important; color:var(--muted); text-align:center; padding:18px 0; }
+.h-name { font-weight:600; font-size:15px; }
+.h-name em { display:block; font-style:normal; color:var(--muted); font-size:11px;
+  font-variant-numeric:tabular-nums; letter-spacing:.02em; }
+.h-bar { height:6px; background:var(--accent-soft); border-radius:99px; overflow:hidden; }
+.h-bar i { display:block; height:100%; background:var(--accent); border-radius:99px; }
+.h-w { text-align:right; font-weight:650; font-size:14px; }
+.h-p { text-align:right; color:var(--muted); font-size:13px; }
+/* chart */
+.spark { width:100%; height:140px; display:block; }
+.sp-area { fill:var(--accent-soft); stroke:none; }
+.sp-line { fill:none; stroke:var(--accent); stroke-width:2; stroke-linejoin:round; stroke-linecap:round; vector-effect:non-scaling-stroke; }
+.sp-dot { fill:var(--accent); stroke:var(--card); stroke-width:2; }
+.chart-cap { display:flex; justify-content:space-between; color:var(--muted); font-size:11.5px; margin-top:6px; }
+/* metrics */
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--line);
+  border-radius:12px; overflow:hidden; }
+.grid .m { background:var(--card); padding:13px 14px; }
+.grid .m .v { font-size:21px; font-weight:730; letter-spacing:-.3px; }
+.grid .m .k { color:var(--muted); font-size:11.5px; margin-top:2px; }
+.up { color:var(--up); } .down { color:var(--down); }
+/* year chips */
+.years { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+.yr { display:flex; flex-direction:column; align-items:center; gap:1px; padding:6px 9px;
+  background:var(--bg); border:1px solid var(--line); border-radius:9px; min-width:52px; }
+.yr b { font-size:11px; color:var(--muted); font-weight:600; }
+.yr i { font-style:normal; font-weight:700; font-size:13px; font-variant-numeric:tabular-nums; }
+.foot { color:var(--muted); font-size:11.5px; line-height:1.6; margin-top:6px; }
+.foot b { color:var(--ink); }
+</style>
+<header><div class="wrap"><div class="brand">量化<span>罗盘</span></div>
+<div class="date num">2026-07-13 · 40只蓝筹池</div></div></header>
+<main class="wrap">
+  <section class="card">
+    <p class="eyebrow">市场状态 · 建议总仓位</p>
+    <div class="hero off">
+      <span class="dot"></span>
+      <div><div class="lab">❄️ 空仓避险</div>
+        <div class="sub">依大盘趋势与波动率动态调节仓位</div></div>
+      <div class="expo"><b class="num">0%</b><em>目标仓位</em></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <p class="eyebrow">候选清单 · 转多后首选（当前建议空仓） · 最多5只</p>
+    <ul class="holds"><li><span class="h-name">华夏银行<em>600015</em></span><span class="h-bar"><i style="width:28%"></i></span><span class="h-w num">28%</span><span class="h-p num">6.86</span></li><li><span class="h-name">宁波银行<em>002142</em></span><span class="h-bar"><i style="width:24%"></i></span><span class="h-w num">24%</span><span class="h-p num">32.26</span></li><li><span class="h-name">美的集团<em>000333</em></span><span class="h-bar"><i style="width:23%"></i></span><span class="h-w num">23%</span><span class="h-p num">80.40</span></li><li><span class="h-name">海康威视<em>002415</em></span><span class="h-bar"><i style="width:14%"></i></span><span class="h-w num">14%</span><span class="h-p num">33.19</span></li><li><span class="h-name">中兴通讯<em>000063</em></span><span class="h-bar"><i style="width:12%"></i></span><span class="h-w num">12%</span><span class="h-p num">40.04</span></li></ul>
+  </section>
+
+  <section class="card">
+    <p class="eyebrow">策略净值（真实回测，起点=1.0）</p>
+    <svg viewBox="0 0 440 140" class="spark" preserveAspectRatio="none" role="img" aria-label="策略净值曲线"><path d="M6.0,134.0 L6.0,75.0 L9.5,75.0 L13.1,75.0 L16.6,75.0 L20.1,75.0 L23.7,75.0 L27.2,75.0 L30.8,75.0 L34.3,75.0 L37.8,75.0 L41.4,75.0 L44.9,75.0 L48.4,75.0 L52.0,75.0 L55.5,75.0 L59.1,75.0 L62.6,64.4 L66.1,22.4 L69.7,11.1 L73.2,26.2 L76.7,24.4 L80.3,17.6 L83.8,24.7 L87.4,35.5 L90.9,16.8 L94.4,69.4 L98.0,71.7 L101.5,66.9 L105.0,69.3 L108.6,70.3 L112.1,70.3 L115.7,70.3 L119.2,70.3 L122.7,70.3 L126.3,70.3 L129.8,70.3 L133.3,70.3 L136.9,34.9 L140.4,16.9 L144.0,59.0 L147.5,60.4 L151.0,61.9 L154.6,66.5 L158.1,65.0 L161.6,67.3 L165.2,70.0 L168.7,71.6 L172.2,60.4 L175.8,77.8 L179.3,79.6 L182.9,72.3 L186.4,93.4 L189.9,50.8 L193.5,28.3 L197.0,22.0 L200.5,28.3 L204.1,32.2 L207.6,6.0 L211.2,20.2 L214.7,18.0 L218.2,30.0 L221.8,50.2 L225.3,43.1 L228.8,59.4 L232.4,52.8 L235.9,31.2 L239.5,13.1 L243.0,27.9 L246.5,34.2 L250.1,38.5 L253.6,52.0 L257.1,45.5 L260.7,45.5 L264.2,45.5 L267.8,45.5 L271.3,45.5 L274.8,47.7 L278.4,47.7 L281.9,47.7 L285.4,47.7 L289.0,47.7 L292.5,57.2 L296.0,68.3 L299.6,70.4 L303.1,73.5 L306.7,78.4 L310.2,81.3 L313.7,87.1 L317.3,90.2 L320.8,100.2 L324.3,104.4 L327.9,104.4 L331.4,104.4 L335.0,104.4 L338.5,104.4 L342.0,104.4 L345.6,104.4 L349.1,96.2 L352.6,106.2 L356.2,108.5 L359.7,107.6 L363.3,102.4 L366.8,92.9 L370.3,94.1 L373.9,80.7 L377.4,93.6 L380.9,99.4 L384.5,122.2 L388.0,119.1 L391.6,122.8 L395.1,134.0 L398.6,122.8 L402.2,63.1 L405.7,71.6 L409.2,64.7 L412.8,87.4 L416.3,88.2 L419.9,102.8 L423.4,111.1 L426.9,111.1 L430.5,111.1 L434.0,111.1 L434.0,134.0 Z" class="sp-area"/><path d="M6.0,75.0 L9.5,75.0 L13.1,75.0 L16.6,75.0 L20.1,75.0 L23.7,75.0 L27.2,75.0 L30.8,75.0 L34.3,75.0 L37.8,75.0 L41.4,75.0 L44.9,75.0 L48.4,75.0 L52.0,75.0 L55.5,75.0 L59.1,75.0 L62.6,64.4 L66.1,22.4 L69.7,11.1 L73.2,26.2 L76.7,24.4 L80.3,17.6 L83.8,24.7 L87.4,35.5 L90.9,16.8 L94.4,69.4 L98.0,71.7 L101.5,66.9 L105.0,69.3 L108.6,70.3 L112.1,70.3 L115.7,70.3 L119.2,70.3 L122.7,70.3 L126.3,70.3 L129.8,70.3 L133.3,70.3 L136.9,34.9 L140.4,16.9 L144.0,59.0 L147.5,60.4 L151.0,61.9 L154.6,66.5 L158.1,65.0 L161.6,67.3 L165.2,70.0 L168.7,71.6 L172.2,60.4 L175.8,77.8 L179.3,79.6 L182.9,72.3 L186.4,93.4 L189.9,50.8 L193.5,28.3 L197.0,22.0 L200.5,28.3 L204.1,32.2 L207.6,6.0 L211.2,20.2 L214.7,18.0 L218.2,30.0 L221.8,50.2 L225.3,43.1 L228.8,59.4 L232.4,52.8 L235.9,31.2 L239.5,13.1 L243.0,27.9 L246.5,34.2 L250.1,38.5 L253.6,52.0 L257.1,45.5 L260.7,45.5 L264.2,45.5 L267.8,45.5 L271.3,45.5 L274.8,47.7 L278.4,47.7 L281.9,47.7 L285.4,47.7 L289.0,47.7 L292.5,57.2 L296.0,68.3 L299.6,70.4 L303.1,73.5 L306.7,78.4 L310.2,81.3 L313.7,87.1 L317.3,90.2 L320.8,100.2 L324.3,104.4 L327.9,104.4 L331.4,104.4 L335.0,104.4 L338.5,104.4 L342.0,104.4 L345.6,104.4 L349.1,96.2 L352.6,106.2 L356.2,108.5 L359.7,107.6 L363.3,102.4 L366.8,92.9 L370.3,94.1 L373.9,80.7 L377.4,93.6 L380.9,99.4 L384.5,122.2 L388.0,119.1 L391.6,122.8 L395.1,134.0 L398.6,122.8 L402.2,63.1 L405.7,71.6 L409.2,64.7 L412.8,87.4 L416.3,88.2 L419.9,102.8 L423.4,111.1 L426.9,111.1 L430.5,111.1 L434.0,111.1" class="sp-line"/><circle cx="434.0" cy="111.1" r="3.4" class="sp-dot"/></svg>
+    <div class="chart-cap"><span>2016-01-04</span>
+      <span>净值 0.9417×</span>
+      <span>2026-06-26</span></div>
+    <div class="years"><span class="yr"><b>2017</b><i class="up">+6%</i></span><span class="yr"><b>2018</b><i class="down">-5%</i></span><span class="yr"><b>2019</b><i class="up">+0%</i></span><span class="yr"><b>2020</b><i class="up">+6%</i></span><span class="yr"><b>2021</b><i class="down">-4%</i></span><span class="yr"><b>2022</b><i class="down">-2%</i></span><span class="yr"><b>2023</b><i class="down">-7%</i></span><span class="yr"><b>2024</b><i class="up">+4%</i></span><span class="yr"><b>2025</b><i class="down">-0%</i></span><span class="yr"><b>2026</b><i class="down">-4%</i></span></div>
+  </section>
+
+  <section class="card">
+    <p class="eyebrow">关键绩效（全区间真实回测）</p>
+    <div class="grid">
+      <div class="m"><div class="v down num">-0.6%</div><div class="k">年化收益</div></div>
+      <div class="m"><div class="v down num">-23.1%</div><div class="k">最大回撤</div></div>
+      <div class="m"><div class="v num">-0.3133</div><div class="k">夏普比率</div></div>
+      <div class="m"><div class="v num">1.6068</div><div class="k">盈亏比</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <p class="foot"><b>免责声明</b> 本页为量化研究/辅助决策工具，<b>非投资建议</b>，
+    不自动下单。数据经真实回测生成；实盘表现通常显著低于回测(约打6–7折)，
+    且纯样本外年化仅约个位数。请务必先用模拟盘/小资金验证，风险自负。</p>
+    <p class="foot">数据源：Yahoo/东财公开行情 · 策略：多因子+市场状态+回撤守卫 · ≤5只集中持仓</p>
+  </section>
+</main></body></html>

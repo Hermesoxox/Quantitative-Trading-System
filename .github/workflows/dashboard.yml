@@ -1,0 +1,55 @@
+name: Daily Dashboard (iPhone)
+
+# 每个交易日收盘后重建移动端看板并部署到 GitHub Pages。
+# iPhone Safari 打开 Pages 网址后「添加到主屏幕」即可当 App 用，且每天自动更新。
+#
+# 首次使用需在仓库 Settings → Pages → Build and deployment → Source 选 "GitHub Actions"。
+# 数据走 Yahoo(全球可达)；若 runner 拉不到数据，则保留上次页面、不覆盖。
+
+on:
+  workflow_dispatch:
+    inputs:
+      n_stocks:
+        description: "股票池数量"
+        required: false
+        default: "40"
+  schedule:
+    # A股 15:00 收盘 = 07:00 UTC；08:00 UTC 周一至周五重建
+    - cron: "0 8 * * 1-5"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Build dashboard (real data)
+        env:
+          QTS_SOURCE: auto          # 云端优先 Yahoo(国际可达)
+        run: |
+          python -m examples.build_dashboard "${{ github.event.inputs.n_stocks || '40' }}" \
+            || echo "⚠️ 数据拉取失败，保留仓库中已有 webapp/ 页面"
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: webapp
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
