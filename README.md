@@ -17,6 +17,9 @@
 config.py                 全局参数（交易规则/成本/风控/区间/因子权重，集中管理防过拟合）
 src/
   data/loader.py          数据加载（AkShare适配 + 合成数据），统一标准化为长表
+  data/eastmoney.py       行情多源抓取（Yahoo/东财/腾讯，QTS_SOURCE 控制顺序）
+  data/yahoo.py           Yahoo Finance 行情（国际可达，云端/CI 首选）
+  data/cn_fundamental.py  东财数据中心财务（ROE/毛利/EPS/BPS/净利），激活价值+质量因子
   data/universe.py        股票池过滤（剔除ST/次新/低流动性），动态可交易池
   factors/library.py      15个因子，含公式与直觉，仅算原值
   factors/neutralize.py   去极值→标准化→行业市值中性化

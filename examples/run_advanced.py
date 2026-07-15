@@ -96,6 +96,20 @@ def load_real(n, start, end, codes_arg):
     # 规模用对数成交额近似，行业占位(真实落地接行业接口)
     log_cap = np.log(wide["amount"].mean()).rename("log_cap")
     industry = pd.Series("ALL", index=close.columns, name="industry")
+
+    # 财务数据(东财数据中心，沙箱/云端亦可达) -> 激活价值/质量因子。
+    # 按公告日 ffill 对齐到交易日，杜绝未来函数；接口不可达则自动跳过(仅用量价因子)。
+    from src.data.cn_fundamental import fetch_fundamentals
+    cache_dir = os.path.join(os.path.dirname(__file__), "..", "data_cache")
+    fund = fetch_fundamentals(list(close.columns),
+                              cache_path=os.path.join(cache_dir, f"fund_{len(close.columns)}.pkl"))
+    if fund is not None and not fund.empty:
+        def align(col):
+            f = fund.reset_index().pivot_table(index="announce_date",
+                                               columns="code", values=col)
+            return f.reindex(close.index, method="ffill").reindex(columns=close.columns)
+        for c in ["roe", "gross_margin", "net_profit", "bps", "eps"]:
+            wide[c] = align(c)
     # 沪深300基准用于 regime 层；若基准历史覆盖不足(<90%)则置空，
     # 改用等权全样本代理(覆盖完整、更稳健)，避免基准缺口扭曲择时。
     bench_df = fetch_kline("000300", start, end, adjust="qfq")

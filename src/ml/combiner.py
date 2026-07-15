@@ -135,13 +135,19 @@ def rolling_ml_scores(
 
     返回 (score_wide, last_feature_importance)。
     """
-    feats = _stack_features(factors).dropna(how="all")
+    feat_cols = list(factors.keys())
+    feats = _stack_features(factors)
     label = _forward_return_label(close, horizon)
-    data = feats.join(label.rename("_y"), how="inner").dropna()
+    data = feats.join(label.rename("_y"), how="inner")
+    # 只按"标签"过滤；缺失因子按 0(中性)填充，而非整行删除——否则某些股票
+    # (如银行无毛利率)会被全部剔除，训练样本骤减致模型无法训练。因子已横截面
+    # 标准化，均值≈0，填 0 即"该维度无信息"。至少需一个因子非缺失才保留该行。
+    data = data.dropna(subset=["_y"])
+    data = data[data[feat_cols].notna().any(axis=1)]
+    data[feat_cols] = data[feat_cols].fillna(0.0)
     if data.empty:
         return pd.DataFrame(index=close.index, columns=close.columns), None
 
-    feat_cols = list(factors.keys())
     obs_dates = data.index.get_level_values("date")
     all_dates = close.index
     score = pd.DataFrame(index=all_dates, columns=close.columns, dtype=float)
@@ -168,7 +174,7 @@ def rolling_ml_scores(
         # 预测当日截面
         if pdate in factors[feat_cols[0]].index:
             row = pd.DataFrame({c: factors[c].loc[pdate] for c in feat_cols})
-            row = row.dropna()
+            row = row[row.notna().any(axis=1)].fillna(0.0)  # 缺失因子按中性0填充
             if not row.empty:
                 pred = model.predict(row)
                 score.loc[pdate, row.index] = pred

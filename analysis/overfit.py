@@ -84,7 +84,9 @@ def pbo_cscv(perf_matrix: pd.DataFrame, n_splits: int = 10) -> dict:
     perf_matrix : index=时间, columns=候选策略, 值=每期收益。
     返回 {"PBO": float, "n_combinations": int}。
     """
-    M = perf_matrix.dropna(how="any")
+    # 先剔除覆盖过低的候选列(如财务因子早期无数据)，避免整体行被 dropna 清空
+    M = perf_matrix.dropna(axis=1, thresh=int(0.6 * len(perf_matrix)))
+    M = M.dropna(how="any")
     T, N = M.shape
     if N < 2 or T < n_splits * 2:
         return {"PBO": np.nan, "n_combinations": 0}
