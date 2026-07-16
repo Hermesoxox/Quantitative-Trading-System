@@ -80,7 +80,13 @@ def load_real(n, start, end, codes_arg):
     from src.data.eastmoney import (fetch_universe_prices, fetch_csi300_codes,
                                     fetch_kline)
     cache_dir = os.path.join(os.path.dirname(__file__), "..", "data_cache")
-    if codes_arg:
+    if codes_arg == "all":
+        # 全市场模式：数据中心拉全A名单(剔除ST/退)，失败回退蓝筹清单。
+        # 注意行情仍需逐只抓取，全市场约5000只需数小时，建议配合 --n 取前N只，
+        # 或在本机首跑后依赖缓存增量更新。
+        from src.data.cn_moneyflow import fetch_all_a_codes
+        codes = fetch_all_a_codes() or fetch_csi300_codes()
+    elif codes_arg:
         codes = [c.strip() for c in codes_arg.split(",") if c.strip()]
     else:
         codes = fetch_csi300_codes()
@@ -110,6 +116,16 @@ def load_real(n, start, end, codes_arg):
             return f.reindex(close.index, method="ffill").reindex(columns=close.columns)
         for c in ["roe", "gross_margin", "net_profit", "bps", "eps"]:
             wide[c] = align(c)
+
+    # 资金流(主力净流入占比) -> 激活 mf_3d_ratio 因子。接口对云端IP不稳定、
+    # 历史深度有限(约近1-2年)；不可达或早期缺失时该因子自动按中性处理。
+    from src.data.cn_moneyflow import fetch_moneyflow_panel
+    flow = fetch_moneyflow_panel(list(close.columns),
+                                 cache_path=os.path.join(
+                                     cache_dir, f"flow_{len(close.columns)}.pkl"))
+    if flow is not None and not flow.empty:
+        wide["mf_ratio"] = (flow["main_net_inflow_ratio"].unstack("code")
+                            .reindex(close.index).reindex(columns=close.columns))
     # 沪深300基准用于 regime 层；若基准历史覆盖不足(<90%)则置空，
     # 改用等权全样本代理(覆盖完整、更稳健)，避免基准缺口扭曲择时。
     bench_df = fetch_kline("000300", start, end, adjust="qfq")
