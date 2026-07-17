@@ -53,17 +53,28 @@ python -m examples.run_advanced --real --n 20 || {
 
 cat <<'TIP'
 
-✅ 全部完成！常用命令（先执行一次  source .venv/bin/activate  激活环境）：
+✅ 全部完成！
 
-  # 完整真实回测（≤5 只集中持仓，约 40 只蓝筹池）
+★★ 重要：每次新开终端窗口，必须先执行下面这一行激活环境 ★★
+（执行后命令行开头出现 (.venv) 字样才算成功，否则会报 command not found: python）
+
+  source .venv/bin/activate
+
+★★ 复制命令时：以 # 开头的说明行不要复制，只复制命令本身 ★★
+
+常用命令：
+
   python -m examples.run_advanced --real --n 40
+      完整真实回测（≤5 只集中持仓，约 40 只蓝筹池）
 
-  # 最诚实的纯样本外回测
   python -m examples.run_walkforward --real --n 40
+      最诚实的纯样本外回测
 
-  # 盘后实盘信号（每天收盘后跑一次，给“明日买/卖清单”）
   python -m examples.live_signal --capital 1000000
-  python -m examples.live_signal --positions examples/positions.example.json --capital 1000000
+      盘后实盘信号（每天收盘后跑一次，给“明日买/卖清单”）
+
+  python -m examples.run_advanced --real --codes all --n 300
+      全市场大股票池验证（首次约 1-2 小时建缓存，之后快）
 
 结果图保存在 reports_advanced/ 、reports_walkforward/ 等文件夹里。
 提示：海外网络环境可改用 Yahoo 源： export QTS_SOURCE=auto
